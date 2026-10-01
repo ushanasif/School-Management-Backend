@@ -1,0 +1,66 @@
+model Fund {
+  id String @id @default(cuid())
+
+  schoolId String
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name String
+  description String?
+  isActive Boolean @default(true)
+
+  feeTypes FeeType[]
+  studentFees StudentFee[]
+  transactions FundTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+/*
+ * Append-only ledger. Rows are never updated or deleted; a mistake is fixed by
+ * writing an opposite row. Fund balance is always calculated from this table.
+ */
+model FundTransaction {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  fundId String
+  fund   Fund   @relation(fields: [fundId], references: [id])
+
+  type   FundTransactionType
+  source FundTransactionSource
+  amount Decimal @db.Decimal(12, 2)
+
+  transactionDate DateTime @default(now())
+
+  description String?
+  category    String? // free text label for expenses, e.g. "Electricity"
+
+  // set for PAYMENT and PAYMENT_REVERSAL rows
+  paymentAllocationId String?
+  paymentAllocation   PaymentAllocation? @relation(fields: [paymentAllocationId], references: [id])
+
+  // set for TRANSFER rows; both sides of one transfer share the same value
+  transferId String?
+
+    // set on a row that cancels an earlier row (a voided expense); one reversal per row
+  reversesId String?          @unique
+  reverses   FundTransaction? @relation("TransactionReversal", fields: [reversesId], references: [id])
+  reversedBy FundTransaction? @relation("TransactionReversal")
+
+  createdBy String?
+
+  createdAt DateTime @default(now())
+
+  @@index([schoolId, transactionDate])
+  @@index([fundId, transactionDate])
+  @@index([paymentAllocationId])
+  @@index([transferId])
+}
+
+

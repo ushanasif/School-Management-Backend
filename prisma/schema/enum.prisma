@@ -1,0 +1,116 @@
+enum SessionType {
+  PLATFORM
+  SCHOOL
+}
+
+enum SchoolStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+enum Language {
+  EN
+  BN
+}
+
+enum SchoolPaymentStatus {
+  PAID
+  UNPAID
+}
+
+enum ModuleType {
+  FREE
+  PAID
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  GRADUATED
+  SUSPENDED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PROMOTED
+  TRANSFERRED
+  WITHDRAWN
+  GRADUATED
+}
+
+enum RoleScope {
+  PLATFORM
+  SCHOOL
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum FeeFrequency {
+  ONE_TIME
+  MONTHLY
+}
+
+enum FeeStatus {
+  DUE
+  PARTIAL
+  PAID
+  UNPAID
+  WAIVED
+}
+
+enum Month {
+  JAN
+  FEB
+  MAR
+  APR
+  MAY
+  JUN
+  JUL
+  AUG
+  SEP
+  OCT
+  NOV
+  DEC
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_BANKING
+}
+
+enum PaymentStatus {
+  SUCCESS
+  CANCELLED
+}
+
+// amount is always positive; direction comes from the type
+// balance = sum(INCOME + TRANSFER_IN) - sum(EXPENSE + TRANSFER_OUT)
+enum FundTransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum FundTransactionSource {
+  PAYMENT           // student fee payment (one row per allocation)
+  PAYMENT_REVERSAL  // opposite row written when a payment is cancelled
+  MANUAL_DEPOSIT    // money added to a fund by hand
+  EXPENSE           // money spent from a fund
+  TRANSFER          // fund to fund transfer (two rows sharing a transferId)
+  ADJUSTMENT        // manual correction
+}
+

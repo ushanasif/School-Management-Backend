@@ -1,0 +1,173 @@
+model User {
+  id String @id @default(cuid())
+
+  fullname String
+
+  email String? @unique
+  phone String? @unique
+
+  password String
+
+  isActive Boolean @default(true)
+
+    mustChangePassword Boolean   @default(false)
+  // access tokens issued before this moment are rejected (password change, logout-all)
+  tokensValidAfter   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // School memberships
+  memberships SchoolMembership[]
+  students Student[]
+  // All role assignments
+  userRoles UserRole[]
+
+  // Authentication sessions
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+model SchoolMembership {
+  id String @id @default(cuid())
+
+  userId   String
+  schoolId String
+
+  status MembershipStatus @default(ACTIVE)
+
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  roles UserRole[]
+  classTeacherAssignments SectionYearConfig[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, schoolId])
+  @@index([userId])
+  @@index([schoolId])
+  @@index([status])
+}
+
+model UserRole {
+  id String @id @default(cuid())
+
+  userId String
+  roleId String
+
+  // NULL means this is a platform-level role.
+  // Non-null means this is a school-level role.
+  membershipId String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  membership  SchoolMembership? @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, roleId, membershipId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([membershipId])
+  @@index([userId, membershipId])
+}
+
+model Role {
+  id String @id @default(cuid())
+
+  scope RoleScope
+
+  schoolId String?
+
+  school School? @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  isSystem Boolean @default(false)
+
+  // User assignments
+  userRoles UserRole[]
+
+  // Role permissions
+  permissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, schoolId, name])
+  @@index([schoolId])
+  @@index([scope])
+}
+
+
+
+model Permission {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  moduleId    String
+  isActive    Boolean @default(true)
+
+  module Module @relation(fields: [moduleId],references: [id],onDelete: Cascade)
+
+  roles RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([moduleId])
+  @@index([isActive])
+}
+
+model RolePermission {
+  id String @id @default(cuid())
+
+  roleId       String
+  permissionId String
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model RefreshToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique
+  familyId  String // shared across a session's whole rotation lineage
+
+  sessionType      SessionType
+  schoolId         String? // set for SCHOOL sessions
+  sessionStartedAt DateTime // copied on every rotation; drives the 30-day absolute cap
+  userAgent        String?
+  ipAddress        String?
+
+  expiresAt DateTime
+  revokedAt DateTime? // set on rotation, so reuse is detectable
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([familyId])
+  @@index([revokedAt])
+}

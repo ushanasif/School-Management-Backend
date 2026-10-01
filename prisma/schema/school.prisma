@@ -1,0 +1,206 @@
+model School {
+  id         String  @id @default(cuid())
+  schoolCode String  @unique
+  nameEn    String
+  nameBn    String?
+
+  subdomain      String       @unique
+  email          String      @unique
+  phone          String?      @unique
+  website        String?
+  address        String?
+  language       Language     @default(BN)
+  logo           String?
+  favicon        String?
+  status         SchoolStatus @default(PENDING)
+  activationDate DateTime?
+  monthlyFee     Decimal?     @db.Decimal(10, 2)
+  discount       Decimal      @default(0) @db.Decimal(5, 2)
+
+  memberships SchoolMembership[]
+  roles       Role[]
+  modules     SchoolModule[]
+  schoolPayments      SchoolPayment[]
+  students  Student[]
+  academicYears AcademicYear[]
+  classes SchoolClass[]
+  sections Section[]
+  groups  Group[]
+  funds         Fund[]
+  fundTransactions FundTransaction[]
+  sequences        SchoolSequence[]
+  feeTypes      FeeType[]
+  feeStructures FeeStructure[]
+  studentFees   StudentFee[]
+  payments      Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subdomain])
+  @@index([status])
+}
+
+model SchoolPayment {
+  id         String              @id @default(cuid())
+  schoolId   String
+  school     School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  monthlyFee Decimal             @db.Decimal(10, 2)
+  discount   Decimal             @default(0) @db.Decimal(5, 2)
+  amount     Decimal
+  month      Int
+  year       Int
+  status     SchoolPaymentStatus @default(UNPAID)
+  remarks    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, year, month])
+  @@index([schoolId])
+}
+
+model Module {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+
+  type  ModuleType @default(FREE)
+  price Decimal?   @db.Decimal(10, 2) // one-time price, null for FREE
+
+  isActive Boolean @default(true)
+
+  permissions   Permission[]
+  schoolModules SchoolModule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([type])
+}
+
+model SchoolModule {
+  id         String   @id @default(cuid())
+  schoolId   String
+  moduleId   String
+  isEnabled  Boolean  @default(true)
+ 
+  school School @relation(fields: [schoolId],references: [id],onDelete: Cascade)
+  module Module @relation(fields: [moduleId],references: [id],onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, moduleId])
+  @@index([schoolId])
+  @@index([moduleId])
+  @@index([isEnabled])
+}
+
+model AcademicYear {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name      String
+  startDate DateTime
+  endDate   DateTime
+
+  isCurrent Boolean @default(false)
+
+  sectionYearConfigs  SectionYearConfig[]
+  enrollments Enrollment[]
+  feeStructures FeeStructure[]
+  studentFees   StudentFee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@index([schoolId, isCurrent])
+}
+
+model SchoolClass {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name         String // "Class 1", "Six", "Nursery"
+  numericLevel Int    // for sorting + promotion logic (Nursery=0, Class 1=1, ...)
+
+  sections  Section[]
+  enrollments Enrollment[]
+  feeStructures FeeStructure[]
+  studentFees   StudentFee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@index([schoolId, numericLevel])
+}
+
+model Section {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  name String // "A", "B"
+
+  enrollments Enrollment[]
+  yearConfigs SectionYearConfig[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, classId, name])
+  @@index([schoolId])
+  @@index([classId])
+}
+
+model SectionYearConfig {
+  id String @id @default(cuid())
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  classTeacherMembershipId String?
+  classTeacherMembership   SchoolMembership? @relation(fields: [classTeacherMembershipId], references: [id], onDelete: SetNull)
+
+  capacity Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionId, academicYearId]) // one config row per section per year
+  @@index([sectionId])
+  @@index([academicYearId])
+  @@index([classTeacherMembershipId])
+}
+
+
+model Group {
+  id String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name  String
+
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([name])
+}

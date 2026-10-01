@@ -1,0 +1,78 @@
+model Student {
+  id               String    @id @default(cuid())
+  schoolId         String
+  school           School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  admissionNo      String
+  nameEn           String
+  nameBn           String
+  dob              DateTime?
+  gender           Gender
+  fatherName       String
+  motherName       String
+  // login number of the family account (+8801XXXXXXXXX). Optional: a student can be
+  // admitted without one. Not unique, because siblings share it.
+  phone            String?
+  email            String?
+  whatsApp         String?
+  presentAddress   String?
+  permanentAddress String?
+  photo            String?
+  religion         String?
+  guardianName     String?
+  guardianPhone    String?
+
+  status StudentStatus @default(ACTIVE)
+
+  userId String?
+  // SetNull: deleting a user must never delete the student
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  enrollments Enrollment[]
+  studentFees StudentFee[]
+  payments    Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([schoolId, nameEn, nameBn, fatherName])
+  @@unique([schoolId, admissionNo])
+  @@index([userId])
+  @@index([schoolId, status])
+  @@index([schoolId, phone])
+}
+
+model Enrollment {
+  id String @id @default(cuid())
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id])
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  groupId String?
+  // SetNull: deleting a group must never delete student enrollments
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  rollNumber String? // roll number within class/section for this year
+
+  status     EnrollmentStatus @default(ACTIVE)
+  enrolledAt DateTime         @default(now())
+  leftAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, academicYearId]) // one enrollment row per student per year
+  @@index([studentId])
+  @@index([academicYearId])
+  @@index([classId])
+  @@index([sectionId])
+  @@index([academicYearId, classId, sectionId])
+}
