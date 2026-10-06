@@ -17,7 +17,7 @@ model Student {
   presentAddress   String?
   permanentAddress String?
   photo            String?
-  religion         String?
+  religion         Religion? // required for new students: it decides their religion subject
   guardianName     String?
   guardianPhone    String?
 
@@ -29,6 +29,10 @@ model Student {
 
   enrollments Enrollment[]
   studentFees StudentFee[]
+  attendance  StudentAttendance[]
+  examMarks   ExamMark[]
+  examResults ExamResult[]
+  finalResults FinalResult[]
   payments    Payment[]
 
   createdAt DateTime @default(now())
@@ -63,6 +67,11 @@ model Enrollment {
   rollNumber String? // roll number within class/section for this year
 
   status     EnrollmentStatus @default(ACTIVE)
+  attendance StudentAttendance[]
+  optionalSubject StudentOptionalSubject?
+  examMarks       ExamMark[]
+  examResults     ExamResult[]
+  finalResults    FinalResult[]
   enrolledAt DateTime         @default(now())
   leftAt     DateTime?
 

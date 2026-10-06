@@ -1,0 +1,54 @@
+/**
+ * Different class hours for a period (Ramadan, winter timing) or a single day (exam day,
+ * sports day): fromDate = toDate. Each rule gives the hours for the whole school, one
+ * class or one section. A section's normal hours live on SectionYearConfig.
+ * Which hours apply to a section on a date: among the overrides covering that date, the
+ * one with the shortest date range wins (an exam day beats Ramadan), then the newest.
+ * Inside it, a section rule beats a class rule, which beats a school-wide rule.
+ */
+model ScheduleOverride {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  name String // "Ramadan timing", "Annual sports day"
+
+  fromDate DateTime @db.Date
+  toDate   DateTime @db.Date
+
+  rules ScheduleOverrideRule[]
+
+  createdBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, fromDate, toDate])
+  @@index([academicYearId])
+}
+
+model ScheduleOverrideRule {
+  id String @id @default(cuid())
+
+  overrideId String
+  override   ScheduleOverride @relation(fields: [overrideId], references: [id], onDelete: Cascade)
+
+  // both null = every section of the school; classId only = every section of that class;
+  // sectionId = that one section (classId is then its class)
+  classId String?
+  class   SchoolClass? @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  sectionId String?
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  startTime String // 24-hour "HH:mm"
+  endTime   String // 24-hour "HH:mm"
+
+  @@index([overrideId])
+  @@index([classId])
+  @@index([sectionId])
+}

@@ -114,3 +114,13 @@ enum FundTransactionSource {
   ADJUSTMENT        // manual correction
 }
 
+
+// a student's religion, and the religion a religion subject is for
+// ("Islam and Moral Education" is taken only by ISLAM students)
+enum Religion {
+  ISLAM
+  HINDUISM
+  CHRISTIANITY
+  BUDDHISM
+  OTHER
+}

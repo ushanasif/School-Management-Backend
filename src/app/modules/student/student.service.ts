@@ -10,11 +10,17 @@ import type {
   UpdateStudentPayload,
 } from "./student.type";
 import { isUniqueViolation } from "../../utils/prismaError";
+import {
+  type AccountResult,
+  findOrCreateAccount,
+  grantSchoolRole,
+  GUARDIAN_ROLE,
+  revokeSchoolRole,
+} from "../../shared/schoolAccounts";
 
 type Db = Prisma.TransactionClient;
 
 const TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 };
-const GUARDIAN_ROLE = "GUARDIAN";
 
 
 const CONFLICT_MESSAGE =
@@ -28,8 +34,8 @@ const enrollmentSelect = {
   enrolledAt: true,
   academicYear: { select: { id: true, name: true } },
   class: { select: { id: true, name: true } },
-  section: { select: { id: true, name: true } },
-  group: { select: { id: true, name: true } },
+  section: { select: { id: true, name: true, isDefault: true } },
+  group: { select: { id: true, nameEn: true, nameBn: true } },
 } satisfies Prisma.EnrollmentSelect;
 
 const withEnrollments = {
@@ -41,71 +47,14 @@ const withEnrollments = {
 
 // ------------------------------------------------------------------ accounts
 
-type AccountResult = { userId: string; created: boolean; temporaryPassword: string | null };
-
-/* Gives the account a membership in this school and the GUARDIAN role. Never touches the password. */
-const ensureGuardianAccess = async (tx: Db, schoolId: string, userId: string) => {
-  const role = await tx.role.upsert({
-    where: { scope_schoolId_name: { scope: "SCHOOL", schoolId, name: GUARDIAN_ROLE } },
-    update: {},
-    create: {
-      scope: "SCHOOL",
-      schoolId,
-      name: GUARDIAN_ROLE,
-      description: "Student / guardian account",
-      isSystem: true,
-    },
-  });
-
-  let membership = await tx.schoolMembership.findUnique({
-    where: { userId_schoolId: { userId, schoolId } },
-  });
-  if (!membership) {
-    membership = await tx.schoolMembership.create({ data: { userId, schoolId, status: "ACTIVE" } });
-  } else if (membership.status === "INACTIVE") {
-    // INACTIVE is what we set when the last role went away; SUSPENDED is left alone
-    membership = await tx.schoolMembership.update({
-      where: { id: membership.id },
-      data: { status: "ACTIVE", leftAt: null },
-    });
-  }
-
-  await tx.userRole.upsert({
-    where: {
-      userId_roleId_membershipId: { userId, roleId: role.id, membershipId: membership.id },
-    },
-    update: {},
-    create: { userId, roleId: role.id, membershipId: membership.id },
-  });
-};
-
-/* Finds the account for this phone or creates one, then links it to this school. */
+/* Finds the account for this phone or creates one, then gives it the GUARDIAN role here. */
 const provisionAccount = async (
   tx: Db,
   input: { schoolId: string; phone: string; fullname: string },
 ): Promise<AccountResult> => {
-  const existing = await tx.user.findUnique({ where: { phone: input.phone }, select: { id: true } });
-
-  let userId: string;
-  let temporaryPassword: string | null = null;
-
-  if (existing) {
-    userId = existing.id;
-  } else {
-    temporaryPassword = PasswordUtils.generateTemporaryPassword();
-    const user = await tx.user.create({
-      data: {
-        fullname: input.fullname,
-        phone: input.phone,
-        password: await PasswordUtils.hashPassword(temporaryPassword),
-        mustChangePassword: true,
-      },
-    });
-    userId = user.id;
-  }
-
-  await ensureGuardianAccess(tx, input.schoolId, userId);
-  return { userId, created: !existing, temporaryPassword };
+  const account = await findOrCreateAccount(tx, { phone: input.phone, fullname: input.fullname });
+  await grantSchoolRole(tx, input.schoolId, account.userId, GUARDIAN_ROLE);
+  return account;
 };
 
 /*
@@ -117,26 +66,7 @@ const deprovisionIfOrphaned = async (tx: Db, schoolId: string, userId: string) =
   const remaining = await tx.student.count({ where: { schoolId, userId } });
   if (remaining > 0) return;
 
-  const membership = await tx.schoolMembership.findUnique({
-    where: { userId_schoolId: { userId, schoolId } },
-    select: { id: true },
-  });
-  if (!membership) return;
-
-  await tx.userRole.deleteMany({
-    where: {
-      membershipId: membership.id,
-      role: { name: GUARDIAN_ROLE, scope: "SCHOOL", schoolId },
-    },
-  });
-
-  const rolesLeft = await tx.userRole.count({ where: { membershipId: membership.id } });
-  if (rolesLeft === 0) {
-    await tx.schoolMembership.updateMany({
-      where: { id: membership.id, status: "ACTIVE" },
-      data: { status: "INACTIVE", leftAt: new Date() },
-    });
-  }
+  await revokeSchoolRole(tx, schoolId, userId, GUARDIAN_ROLE.name);
 };
 
 const accountPayload = (
@@ -338,10 +268,28 @@ const createStudent = async (schoolId: string, data: CreateStudentPayload) => {
         include: withEnrollments,
       });
 
+      // a section's capacity is only a warning: the student is admitted either way
+      const warnings: string[] = [];
+      const sectionConfig = await tx.sectionYearConfig.findUnique({
+        where: { sectionId_academicYearId: { sectionId: enr.sectionId, academicYearId: academicYear.id } },
+        select: { capacity: true },
+      });
+      if (sectionConfig?.capacity != null) {
+        const activeInSection = await tx.enrollment.count({
+          where: { academicYearId: academicYear.id, sectionId: enr.sectionId, status: "ACTIVE" },
+        });
+        if (activeInSection > sectionConfig.capacity) {
+          warnings.push(
+            `This section now has ${activeInSection} students, more than its capacity of ${sectionConfig.capacity}`,
+          );
+        }
+      }
+
       return {
         student: saved,
         account: accountPayload(account, phone ?? null, siblingsInSchool),
         feesAssigned, // 0 means no fee structure is set up yet for this class and year
+        warnings,
       };
     }, TX_OPTIONS);
   } catch (e) {
@@ -467,7 +415,7 @@ const getStudentById = async (schoolId: string, studentId: string) => {
 };
 
 const getStudents = async (schoolId: string, query: ListStudentsQuery) => {
-  const { search, status, academicYearId, classId, sectionId, groupId, hasAccount, sortBy, sortOrder, page, limit } =
+  const { search, status, religion, academicYearId, classId, sectionId, groupId, hasAccount, sortBy, sortOrder, page, limit } =
     query;
 
   const yearId =
@@ -485,6 +433,7 @@ const getStudents = async (schoolId: string, query: ListStudentsQuery) => {
   const where: Prisma.StudentWhereInput = {
     schoolId,
     ...(status ? { status } : {}),
+    ...(religion ? { religion } : {}),
     ...(hasAccount ? { userId: hasAccount === "true" ? { not: null } : null } : {}),
     ...(search
       ? {
@@ -570,7 +519,7 @@ const resetGuardianPassword = async (schoolId: string, studentId: string) => {
 
   const usedElsewhere = user.memberships.some((m) => m.schoolId !== schoolId);
   const hasOtherRoles = user.userRoles.some(
-    (ur) => ur.membershipId === null || ur.role.name !== GUARDIAN_ROLE,
+    (ur) => ur.membershipId === null || ur.role.name !== GUARDIAN_ROLE.name,
   );
   if (usedElsewhere || hasOtherRoles) {
     throw new AppError(

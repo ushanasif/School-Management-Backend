@@ -1,7 +1,6 @@
-import express, { Request, Response, NextFunction } from 'express'
+import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
-import httpStatus from 'http-status';
 import router from './app/routes';
 import { globalErrorHandler, notFoundHandler } from './app/errorHandler/globalErrorHandler';
 import verifyOrigin from "./app/middlewares/verifyOrigin";

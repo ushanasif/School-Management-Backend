@@ -6,6 +6,7 @@ import authenticate from "../../middlewares/auth";
 
 const router = express.Router();
 
+// every school route is for the platform admin only
 router.use(authenticate("PLATFORM"));
 
 router.post(

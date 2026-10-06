@@ -1,0 +1,112 @@
+/*
+ * Daily attendance, taken by hand for now. Every record keeps its source and check-in /
+ * check-out times, so a fingerprint machine can feed the same tables later (a manual
+ * entry always wins over the machine).
+ */
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE // excused absence
+}
+
+enum AttendanceSource {
+  MANUAL
+  DEVICE // fingerprint machine (later)
+}
+
+/*
+ * One roll call per section per day. The class hours in force that day are copied in
+ * when it is first taken, so later changes to the schedule never rewrite it.
+ */
+model AttendanceSession {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // Restrict: attendance history must survive
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+
+  date DateTime @db.Date
+
+  // copied from the schedule when first taken ("HH:mm"; null if the section has no hours)
+  startTime     String?
+  endTime       String?
+  scheduleNote  String? // the schedule change in force that day, e.g. "Ramadan timing"
+
+  takenBy   String // user id
+  updatedBy String?
+
+  records StudentAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionId, date])
+  @@index([schoolId, date])
+  @@index([academicYearId])
+}
+
+model StudentAttendance {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Restrict: a student or enrollment with attendance is never deleted
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+
+  status AttendanceStatus
+  note   String?
+
+  source     AttendanceSource @default(MANUAL)
+  checkInAt  DateTime?
+  checkOutAt DateTime?
+
+  markedBy String? // user id of the last manual change
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@index([enrollmentId])
+}
+
+/* One record per teacher per day. */
+model TeacherAttendance {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  date DateTime @db.Date
+
+  status AttendanceStatus
+  note   String?
+
+  source     AttendanceSource @default(MANUAL)
+  checkInAt  DateTime?
+  checkOutAt DateTime?
+
+  markedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, date])
+  @@index([schoolId, date])
+}

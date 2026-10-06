@@ -70,6 +70,7 @@ const verifyPlatformAdmin = async (token: string, options: AuthenticateOptions) 
 
 const authenticate = (sessionType?: AuthSession, options: AuthenticateOptions = {}) => {
   return async (req: Request, _res: Response, next: NextFunction) => {
+   
     try {
       const platformToken = req.cookies?.[cookieNames.PLATFORM.access] as string | undefined;
       const schoolToken = req.cookies?.[cookieNames.SCHOOL.access] as string | undefined;
@@ -87,7 +88,13 @@ const authenticate = (sessionType?: AuthSession, options: AuthenticateOptions = 
       } else {
         mode = platformToken ? "PLATFORM" : schoolToken ? "SCHOOL" : undefined;
       }
-
+        console.log({
+  sessionType,
+  hasSchoolToken: !!schoolToken,
+  hasPlatformToken: !!platformToken,
+  headerSchoolId,
+  mode,
+});
       if (!mode) throw new AppError("Authentication required!", httpStatus.UNAUTHORIZED);
 
       // ---------------------------------------------------------- platform

@@ -47,6 +47,7 @@ model SchoolMembership {
 
   roles UserRole[]
   classTeacherAssignments SectionYearConfig[]
+  teacherProfile          TeacherProfile?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

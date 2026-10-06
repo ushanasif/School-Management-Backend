@@ -1,11 +1,11 @@
 model School {
   id         String  @id @default(cuid())
   schoolCode String  @unique
-  nameEn    String
-  nameBn    String?
+  nameEn     String
+  nameBn     String?
 
   subdomain      String       @unique
-  email          String      @unique
+  email          String       @unique
   phone          String?      @unique
   website        String?
   address        String?
@@ -17,22 +17,36 @@ model School {
   monthlyFee     Decimal?     @db.Decimal(10, 2)
   discount       Decimal      @default(0) @db.Decimal(5, 2)
 
-  memberships SchoolMembership[]
-  roles       Role[]
-  modules     SchoolModule[]
-  schoolPayments      SchoolPayment[]
-  students  Student[]
-  academicYears AcademicYear[]
-  classes SchoolClass[]
-  sections Section[]
-  groups  Group[]
-  funds         Fund[]
-  fundTransactions FundTransaction[]
-  sequences        SchoolSequence[]
-  feeTypes      FeeType[]
-  feeStructures FeeStructure[]
-  studentFees   StudentFee[]
-  payments      Payment[]
+  memberships       SchoolMembership[]
+  roles             Role[]
+  modules           SchoolModule[]
+  schoolPayments    SchoolPayment[]
+  students          Student[]
+  academicYears     AcademicYear[]
+  scheduleOverrides ScheduleOverride[]
+  subjects          Subject[]
+  classSubjects ClassSubject[]
+  teacherProfiles   TeacherProfile[]
+  subjectTeachers   SubjectTeacher[]
+  weeklyHolidayRules        WeeklyHolidayRule[]
+  attendanceSessions        AttendanceSession[]
+  gradingScales             GradingScale[]
+  classResultSettings       ClassResultSetting[]
+  exams                     Exam[]
+  finalFormulas             FinalResultFormula[]
+  teacherAttendance         TeacherAttendance[]
+  nationalHolidayExclusions NationalHolidayExclusion[]
+  calendarEntries           CalendarEntry[]
+  classes           SchoolClass[]
+  sections          Section[]
+  groups            Group[]
+  funds             Fund[]
+  fundTransactions  FundTransaction[]
+  sequences         SchoolSequence[]
+  feeTypes          FeeType[]
+  feeStructures     FeeStructure[]
+  studentFees       StudentFee[]
+  payments          Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -82,13 +96,13 @@ model Module {
 }
 
 model SchoolModule {
-  id         String   @id @default(cuid())
-  schoolId   String
-  moduleId   String
-  isEnabled  Boolean  @default(true)
- 
-  school School @relation(fields: [schoolId],references: [id],onDelete: Cascade)
-  module Module @relation(fields: [moduleId],references: [id],onDelete: Cascade)
+  id        String  @id @default(cuid())
+  schoolId  String
+  moduleId  String
+  isEnabled Boolean @default(true)
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -111,10 +125,18 @@ model AcademicYear {
 
   isCurrent Boolean @default(false)
 
-  sectionYearConfigs  SectionYearConfig[]
-  enrollments Enrollment[]
-  feeStructures FeeStructure[]
-  studentFees   StudentFee[]
+  sectionYearConfigs SectionYearConfig[]
+  scheduleOverrides  ScheduleOverride[]
+  classSubjects      ClassSubject[]
+  subjectTeachers    SubjectTeacher[]
+  calendarEntries    CalendarEntry[]
+  attendanceSessions AttendanceSession[]
+  resultSettings     ClassResultSetting[]
+  exams              Exam[]
+  finalFormulas      FinalResultFormula[]
+  enrollments        Enrollment[]
+  feeStructures      FeeStructure[]
+  studentFees        StudentFee[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -130,12 +152,18 @@ model SchoolClass {
   school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   name         String // "Class 1", "Six", "Nursery"
-  numericLevel Int    // for sorting + promotion logic (Nursery=0, Class 1=1, ...)
+  numericLevel Int // for sorting + promotion logic (Nursery=0, Class 1=1, ...)
 
-  sections  Section[]
-  enrollments Enrollment[]
-  feeStructures FeeStructure[]
-  studentFees   StudentFee[]
+  sections              Section[]
+  enrollments           Enrollment[]
+  scheduleOverrideRules ScheduleOverrideRule[]
+  classSubjects ClassSubject[]
+  calendarEntryClasses CalendarEntryClass[]
+  resultSettings       ClassResultSetting[]
+  examClasses          ExamClass[]
+  finalFormulas        FinalResultFormula[]
+  feeStructures         FeeStructure[]
+  studentFees           StudentFee[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -155,8 +183,15 @@ model Section {
 
   name String // "A", "B"
 
-  enrollments Enrollment[]
-  yearConfigs SectionYearConfig[]
+  // the section created automatically for a class that has none (a school that does not
+  // use sections); the UI hides its label. Renaming it makes it an ordinary section.
+  isDefault Boolean @default(false)
+
+  enrollments           Enrollment[]
+  scheduleOverrideRules ScheduleOverrideRule[]
+  yearConfigs           SectionYearConfig[]
+  subjectTeachers       SubjectTeacher[]
+  attendanceSessions    AttendanceSession[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -180,6 +215,11 @@ model SectionYearConfig {
 
   capacity Int?
 
+  // the section's normal class hours this year, 24-hour "HH:mm". Changing them never
+  // rewrites history: attendance keeps a copy of the times in force on its own day.
+  startTime String?
+  endTime   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -189,18 +229,26 @@ model SectionYearConfig {
   @@index([classTeacherMembershipId])
 }
 
-
+/*
+ * A study group such as Science, Business Studies or Humanities (classes 9-10). A student
+ * joins one through their enrollment, and subjects can be assigned to one group only.
+ * Names are unique per school ignoring case (partial indexes in the groups migration).
+ */
 model Group {
-  id String @id @default(cuid())
+  id       String @id @default(cuid())
   schoolId String
   school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  name  String
 
-  enrollments Enrollment[]
+  // both are required: a school can work in Bangla or in English
+  nameEn String
+  nameBn String
+
+  enrollments   Enrollment[]
+  classSubjects ClassSubject[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([schoolId, name])
-  @@index([name])
+  @@unique([schoolId, nameEn])
+  @@index([schoolId])
 }

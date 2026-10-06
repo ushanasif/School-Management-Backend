@@ -144,78 +144,78 @@ const activateSchool = async (schoolId: string) => {
   };
 };
 
-const createSchoolSuperAdmin = async (
-  schoolId: string,
-  data: { fullname: string; email: string },
-) => {
-  const school = await prisma.school.findUnique({ where: { id: schoolId } });
-  if (!school) throw new AppError("School not found", httpStatus.NOT_FOUND);
-  if (school.status !== "ACTIVE") {
-    throw new AppError(
-      "School must be active before adding a super admin",
-      httpStatus.BAD_REQUEST,
-    );
-  }
+// const createSchoolSuperAdmin = async (
+//   schoolId: string,
+//   data: { fullname: string; email: string },
+// ) => {
+//   const school = await prisma.school.findUnique({ where: { id: schoolId } });
+//   if (!school) throw new AppError("School not found", httpStatus.NOT_FOUND);
+//   if (school.status !== "ACTIVE") {
+//     throw new AppError(
+//       "School must be active before adding a super admin",
+//       httpStatus.BAD_REQUEST,
+//     );
+//   }
 
-  const superAdminRole = await prisma.role.findUnique({
-    where: {
-      scope_schoolId_name: {
-        scope: "SCHOOL",
-        schoolId,
-        name: "SCHOOL_SUPER_ADMIN",
-      },
-    },
-  });
-  if (!superAdminRole) {
-    throw new AppError(
-      "Super admin role not provisioned for this school",
-      httpStatus.INTERNAL_SERVER_ERROR,
-    );
-  }
+//   const superAdminRole = await prisma.role.findUnique({
+//     where: {
+//       scope_schoolId_name: {
+//         scope: "SCHOOL",
+//         schoolId,
+//         name: "SCHOOL_SUPER_ADMIN",
+//       },
+//     },
+//   });
+//   if (!superAdminRole) {
+//     throw new AppError(
+//       "Super admin role not provisioned for this school",
+//       httpStatus.INTERNAL_SERVER_ERROR,
+//     );
+//   }
 
-  let user = await prisma.user.findUnique({ where: { email: data.email } });
-  let temporaryPassword: string | undefined;
+//   let user = await prisma.user.findUnique({ where: { email: data.email } });
+//   let temporaryPassword: string | undefined;
 
-  if (!user) {
-  const temporaryPassword = PasswordUtils.generateTemporaryPassword();
-  const passwordHash = await PasswordUtils.hashPassword(temporaryPassword);
+//   if (!user) {
+//   const temporaryPassword = PasswordUtils.generateTemporaryPassword();
+//   const passwordHash = await PasswordUtils.hashPassword(temporaryPassword);
   
-    user = await prisma.user.create({
-      data: {
-        fullname: data.fullname,
-        email: data.email,
-        password: passwordHash,
-      },
-    });
-  }
+//     user = await prisma.user.create({
+//       data: {
+//         fullname: data.fullname,
+//         email: data.email,
+//         password: passwordHash,
+//       },
+//     });
+//   }
 
-  const membership = await prisma.schoolMembership.upsert({
-    where: { userId_schoolId: { userId: user.id, schoolId } },
-    update: { status: "ACTIVE" },
-    create: { userId: user.id, schoolId, status: "ACTIVE" },
-  });
+//   const membership = await prisma.schoolMembership.upsert({
+//     where: { userId_schoolId: { userId: user.id, schoolId } },
+//     update: { status: "ACTIVE" },
+//     create: { userId: user.id, schoolId, status: "ACTIVE" },
+//   });
 
-  await prisma.userRole.upsert({
-    where: {
-      userId_roleId_membershipId: {
-        userId: user.id,
-        roleId: superAdminRole.id,
-        membershipId: membership.id,
-      },
-    },
-    update: {},
-    create: {
-      userId: user.id,
-      roleId: superAdminRole.id,
-      membershipId: membership.id,
-    },
-  });
+//   await prisma.userRole.upsert({
+//     where: {
+//       userId_roleId_membershipId: {
+//         userId: user.id,
+//         roleId: superAdminRole.id,
+//         membershipId: membership.id,
+//       },
+//     },
+//     update: {},
+//     create: {
+//       userId: user.id,
+//       roleId: superAdminRole.id,
+//       membershipId: membership.id,
+//     },
+//   });
 
-  return {
-    user: { id: user.id, fullname: user.fullname, email: user.email },
-    temporaryPassword, // undefined if the user already existed (e.g. staff at another school too)
-  };
-};
+//   return {
+//     user: { id: user.id, fullname: user.fullname, email: user.email },
+//     temporaryPassword, // undefined if the user already existed (e.g. staff at another school too)
+//   };
+// };
 
 const getAllSchools = async (query: GetAllSchoolsQuery) => {
   const { where, orderBy, skip, take, page, limit } = buildQueryOptions(query, {
@@ -236,6 +236,5 @@ const getAllSchools = async (query: GetAllSchoolsQuery) => {
 export const SchoolService = {
   createSchool,
   activateSchool,
-  createSchoolSuperAdmin,
   getAllSchools,
 };

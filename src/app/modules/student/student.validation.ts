@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Gender, StudentStatus } from "../../../../generated/prisma/enums";
+import { Gender, Religion, StudentStatus } from "../../../../generated/prisma/enums";
 import { idSchema } from "../../shared/financeSchemas";
 import { bdPhoneSchema, emailSchema } from "../../utils/identity";
 
@@ -48,7 +48,8 @@ const createStudent = z.object({
   presentAddress: opt(text(300)),
   permanentAddress: opt(text(300)),
   photo: opt(url),
-  religion: opt(text(50)),
+  // required: it decides which religion subject the student takes
+  religion: z.enum(Religion, { error: "Religion is required!" }),
   guardianName: opt(text(150)),
   guardianPhone: opt(bdPhoneSchema),
   enrollment: enrollmentInput,
@@ -72,7 +73,8 @@ const updateStudent = z
     presentAddress: clearable(text(300)),
     permanentAddress: clearable(text(300)),
     photo: clearable(url),
-    religion: clearable(text(50)),
+    // can be changed but not cleared
+    religion: z.enum(Religion).optional(),
     guardianName: clearable(text(150)),
     guardianPhone: clearable(bdPhoneSchema),
   })
@@ -83,6 +85,7 @@ const studentIdParams = z.object({ studentId: idSchema("Student id") });
 const listStudentsQuery = z.object({
   search: z.string().trim().min(1).optional(),
   status: z.enum(StudentStatus).optional(),
+  religion: z.enum(Religion).optional(),
   // class/section/group filters use this year, or the current year when omitted
   academicYearId: z.string().trim().min(1).optional(),
   classId: z.string().trim().min(1).optional(),

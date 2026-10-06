@@ -1,0 +1,80 @@
+enum TeacherStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED // left the school: the TEACHER role is removed, history is kept
+  RETIRED // same as RESIGNED
+}
+
+/*
+ * A teacher is an ordinary account (User, logs in with a mobile number) with a membership
+ * in the school, the TEACHER role, and this profile. The profile belongs to the membership,
+ * so a person teaching at two schools has one account and one profile per school. The name
+ * and phone live on User. Teachers are never deleted: their history (class teacher,
+ * subject teacher, later attendance and marks) must survive.
+ */
+model TeacherProfile {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  membershipId String           @unique
+  membership   SchoolMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  // every profile field is optional
+  designation    String? // "Assistant Teacher", "Head Teacher"...
+  mpoIndex       String?
+  joiningDate    DateTime? @db.Date
+  qualification  String?
+  specialization String?
+  gender         Gender?
+  photo          String?
+  nid            String?
+
+  status TeacherStatus @default(ACTIVE)
+  leftAt DateTime?     @db.Date
+
+  subjectAssignments SubjectTeacher[]
+  attendance         TeacherAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, status])
+}
+
+/*
+ * Who teaches a class subject in a section in one academic year. Several teachers can
+ * share one (theory and practical), and one teacher can teach any number of subjects in
+ * any number of sections. A change replaces the list; a new academic year starts with a
+ * copy of the previous year's assignments.
+ */
+model SubjectTeacher {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // always the class subject's own year; kept here for simple per-year queries
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  // removing a subject from a class removes its teachers too
+  classSubjectId String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+
+  // Restrict: a teacher with assignments is never deleted (they are deactivated instead)
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([sectionId, classSubjectId, teacherId])
+  @@index([schoolId])
+  @@index([academicYearId, sectionId])
+  @@index([teacherId, academicYearId])
+  @@index([classSubjectId])
+}

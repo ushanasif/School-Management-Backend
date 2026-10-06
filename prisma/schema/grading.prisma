@@ -1,0 +1,533 @@
+/*
+ * How results are worked out: grading scales and each class's result settings.
+ *
+ * GRADED: a subject's marks % -> grade and point (GradeMarkBand), the average point -> GPA,
+ * the GPA -> the overall grade (GradeGpaBand). MARKS_ONLY: no grades; total marks, pass or
+ * fail by pass marks, merit by total.
+ */
+
+enum ResultSystem {
+  GRADED
+  MARKS_ONLY
+}
+
+enum AbsentRule {
+  FAIL // absent = 0 marks and failed
+  EXCLUDE // the subject is left out of the total and the GPA
+}
+
+/*
+ * A school's grading scale ("GPA 5", "GPA 4"), reused by classes and years. Once a
+ * published result has used it, it is locked: changes are made on a copy, so old results
+ * never shift.
+ */
+model GradingScale {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name        String // "GPA 5"
+  description String?
+
+  maxGpa    Decimal @db.Decimal(3, 2) // 5.00: the GPA never goes above it
+  failGrade String  @default("F") // the grade of a failed subject or result (0 points)
+
+  // an F in any compulsory subject makes the whole result F
+  failIfAnyCompulsoryFails Boolean @default(true)
+  // the optional (4th) subject adds its points above the threshold to the GPA
+  optionalBonusEnabled     Boolean @default(true)
+  optionalBonusThreshold   Decimal @default(2.00) @db.Decimal(3, 2)
+
+  isLocked Boolean @default(false)
+
+  markBands GradeMarkBand[]
+  gpaBands  GradeGpaBand[]
+
+  classSettings ClassResultSetting[]
+  classSubjects ClassSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+/* Marks % -> grade and point. Each band starts at minPercent and runs up to the next one. */
+model GradeMarkBand {
+  id String @id @default(cuid())
+
+  scaleId String
+  scale   GradingScale @relation(fields: [scaleId], references: [id], onDelete: Cascade)
+
+  minPercent Decimal @db.Decimal(5, 2) // 80.00 (one band always starts at 0)
+  grade      String // "A+"
+  point      Decimal @db.Decimal(3, 2) // 5.00
+
+  @@unique([scaleId, minPercent])
+}
+
+/* GPA -> the overall grade. Each band starts at minGpa and runs up to the next one. */
+model GradeGpaBand {
+  id String @id @default(cuid())
+
+  scaleId String
+  scale   GradingScale @relation(fields: [scaleId], references: [id], onDelete: Cascade)
+
+  minGpa Decimal @db.Decimal(3, 2) // 4.00 (one band always starts at 0)
+  grade  String // "A"
+
+  @@unique([scaleId, minGpa])
+}
+
+/* A part of a class subject's marks: "Written" 70 (pass 23), "MCQ" 30 (pass 10). */
+model ClassSubjectPart {
+  id String @id @default(cuid())
+
+  classSubjectId String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+
+  name      String
+  fullMarks Decimal @db.Decimal(6, 2)
+  passMarks Decimal @db.Decimal(6, 2)
+  sortOrder Int     @default(0)
+
+  @@unique([classSubjectId, name])
+}
+
+/* How a class's results are worked out in one academic year (copied into the next year). */
+model ClassResultSetting {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  resultSystem ResultSystem @default(GRADED)
+
+  // required for GRADED; a class subject can use its own scale instead
+  gradingScaleId String?
+  gradingScale   GradingScale? @relation(fields: [gradingScaleId], references: [id], onDelete: Restrict)
+
+  // Bangla 1st + 2nd Paper graded together as "Bangla" (true) or each paper on its own
+  combinePapers Boolean    @default(true)
+  absentRule    AbsentRule @default(FAIL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, classId])
+  @@index([schoolId])
+}
+
+// ================================================================== exams
+
+enum ExamType {
+  SINGLE // one day: every subject on the same date (monthly test)
+  MULTIPLE // several days: each subject on its own date (half-yearly, annual)
+}
+
+enum ExamClassStatus {
+  ROUTINE // the routine is being set up
+  MARKS_ENTRY // marks can be entered
+  PUBLISHED // the result is out and marks are locked
+}
+
+/*
+ * An exam of one academic year, for some or all classes. Each class moves through
+ * ROUTINE -> MARKS_ENTRY -> PUBLISHED on its own, so classes can finish at different times.
+ */
+model Exam {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // Restrict: exam history must survive
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  nameEn String
+  nameBn String
+  type   ExamType
+
+  // the attendance shown on the result sheet is counted over this period;
+  // null = from the start of the academic year to the exam's last day
+  attendanceFrom DateTime? @db.Date
+  attendanceTo   DateTime? @db.Date
+
+  classes ExamClass[]
+  finalComponents FinalResultComponentExam[]
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, academicYearId])
+}
+
+model ExamClass {
+  id String @id @default(cuid())
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  status ExamClassStatus @default(ROUTINE)
+
+  // SINGLE exams: the one exam day of this class
+  date DateTime? @db.Date
+
+  publishedAt DateTime?
+  publishedBy String?
+
+  subjects ExamSubject[]
+  results  ExamResult[]
+
+  // the rules used when the result was published: result system, papers, absent rule and the
+  // grading scales with their bands (the grading reference printed on the result sheet)
+  resultRules Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, classId])
+  @@index([classId])
+}
+
+/* One subject in a class's exam routine, with its own marks (copied from the class subject). */
+model ExamSubject {
+  id String @id @default(cuid())
+
+  examClassId String
+  examClass   ExamClass @relation(fields: [examClassId], references: [id], onDelete: Cascade)
+
+  // Restrict: a class subject that has been examined cannot be removed
+  classSubjectId String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Restrict)
+
+  date      DateTime @db.Date
+  startTime String? // "HH:mm"
+  endTime   String?
+
+  fullMarks Decimal           @db.Decimal(6, 2)
+  passMarks Decimal           @db.Decimal(6, 2)
+  parts     ExamSubjectPart[]
+  marks     ExamMark[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examClassId, classSubjectId])
+  @@index([classSubjectId])
+}
+
+model ExamSubjectPart {
+  id String @id @default(cuid())
+
+  examSubjectId String
+  examSubject   ExamSubject @relation(fields: [examSubjectId], references: [id], onDelete: Cascade)
+
+  name      String
+  fullMarks Decimal @db.Decimal(6, 2)
+  passMarks Decimal @db.Decimal(6, 2)
+  sortOrder Int     @default(0)
+
+  @@unique([examSubjectId, name])
+}
+
+/* A student's optional (4th) subject for one year: one per enrollment. */
+model StudentOptionalSubject {
+  id String @id @default(cuid())
+
+  enrollmentId String     @unique
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  // Restrict: a chosen subject cannot be removed from the class
+  classSubjectId String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Restrict)
+
+  chosenBy  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([classSubjectId])
+}
+
+/*
+ * A student's marks in one exam subject. With parts, partMarks holds each part's marks
+ * ({"Written": 45, "MCQ": 22.5}) and total is their sum; absent = no marks at all.
+ */
+model ExamMark {
+  id String @id @default(cuid())
+
+  // Restrict: marks are never lost by a routine change (the routine is locked once marks exist)
+  examSubjectId String
+  examSubject   ExamSubject @relation(fields: [examSubjectId], references: [id], onDelete: Restrict)
+
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  isAbsent  Boolean  @default(false)
+  partMarks Json?
+  total     Decimal? @db.Decimal(6, 2) // null when absent
+
+  enteredBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examSubjectId, enrollmentId])
+  @@index([enrollmentId])
+  @@index([studentId])
+}
+
+// ================================================================= results
+
+/*
+ * A student's published result in one exam (one class). Everything is copied in at
+ * publish time, so later changes to marks setup, scales or settings never alter it.
+ * Unlocking the result deletes these rows; publishing again recalculates them.
+ */
+model ExamResult {
+  id String @id @default(cuid())
+
+  examClassId String
+  examClass   ExamClass @relation(fields: [examClassId], references: [id], onDelete: Cascade)
+
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  sectionId String
+
+  totalMarks Decimal  @db.Decimal(8, 2)
+  fullMarks  Decimal  @db.Decimal(8, 2) // of the subjects counted
+  percentage Decimal  @db.Decimal(5, 2)
+  gpa        Decimal? @db.Decimal(3, 2) // GRADED only
+  grade      String? // GRADED only: the overall grade
+
+  passed         Boolean
+  failedSubjects Int
+
+  // passed students first, then GPA, then total marks; ties share a position
+  sectionPosition Int
+  classPosition   Int
+
+  // attendance over the exam's attendance period
+  attendanceDays    Int
+  attendancePresent Int // present + late
+  attendanceAbsent  Int
+  attendanceLeave   Int
+
+  subjects ExamResultSubject[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([examClassId, enrollmentId])
+  @@index([examClassId, sectionId])
+  @@index([studentId])
+}
+
+/*
+ * One subject line of a result, as graded: a subject, or (papers combined) the parent
+ * subject with its papers in `papers`.
+ */
+model ExamResultSubject {
+  id String @id @default(cuid())
+
+  resultId String
+  result   ExamResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  subjectId String
+  nameEn    String
+  nameBn    String
+  code      String?
+
+  isOptional Boolean // the 4th subject: only its bonus counts towards the GPA
+  isAbsent   Boolean
+  excluded   Boolean // absent under the EXCLUDE rule: left out of totals and GPA
+
+  fullMarks  Decimal  @db.Decimal(6, 2)
+  passMarks  Decimal  @db.Decimal(6, 2)
+  marks      Decimal? @db.Decimal(6, 2) // null when absent
+  percentage Decimal  @db.Decimal(5, 2)
+  passed     Boolean
+  grade      String? // GRADED only
+  point      Decimal? @db.Decimal(3, 2)
+
+  parts  Json? // [{ name, fullMarks, passMarks, marks, passed }]
+  papers Json? // combined papers: [{ subjectId, nameEn, nameBn, code, fullMarks, marks, isAbsent }]
+
+  sortOrder Int
+
+  @@index([resultId])
+}
+
+// ============================================================ final results
+
+enum FinalComponentMethod {
+  AVERAGE // the average of the component's exams
+  BEST // the average of the best n of them ("best 2 of 3 class tests")
+}
+
+enum FinalResultStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/*
+ * How a class's final (or term) result is made from its exams in one year. Every school
+ * and class builds its own, and a class can have several ("Half-yearly result", "Annual
+ * result"). Components are weighted (adding up to 100%).
+ */
+model FinalResultFormula {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  nameEn String
+  nameBn String
+
+  // attendance on the final result sheet; null = year start to the last exam day
+  attendanceFrom DateTime? @db.Date
+  attendanceTo   DateTime? @db.Date
+
+  status      FinalResultStatus @default(DRAFT)
+  publishedAt DateTime?
+  publishedBy String?
+  resultRules Json? // the rules and grading tables used, saved when published
+
+  components FinalResultComponent[]
+  results    FinalResult[]
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, classId, nameEn])
+  @@index([schoolId])
+}
+
+model FinalResultComponent {
+  id String @id @default(cuid())
+
+  formulaId String
+  formula   FinalResultFormula @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+
+  nameEn String // "Class tests"
+  nameBn String
+
+  weight    Decimal              @db.Decimal(5, 2)
+  method    FinalComponentMethod @default(AVERAGE)
+  bestCount Int? // BEST only
+  sortOrder Int                  @default(0)
+
+  exams FinalResultComponentExam[]
+
+  @@index([formulaId])
+}
+
+model FinalResultComponentExam {
+  id String @id @default(cuid())
+
+  componentId String
+  component   FinalResultComponent @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  // Restrict: an exam used by a formula cannot be deleted
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Restrict)
+
+  @@unique([componentId, examId])
+  @@index([examId])
+}
+
+/* A student's published final result, saved as a snapshot like an exam result. */
+model FinalResult {
+  id String @id @default(cuid())
+
+  formulaId String
+  formula   FinalResultFormula @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  sectionId String
+
+  totalMarks Decimal  @db.Decimal(8, 2)
+  fullMarks  Decimal  @db.Decimal(8, 2)
+  percentage Decimal  @db.Decimal(5, 2)
+  gpa        Decimal? @db.Decimal(3, 2)
+  grade      String?
+
+  passed         Boolean
+  failedSubjects Int
+
+  sectionPosition Int
+  classPosition   Int
+
+  attendanceDays    Int
+  attendancePresent Int
+  attendanceAbsent  Int
+  attendanceLeave   Int
+
+  subjects FinalResultSubject[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([formulaId, enrollmentId])
+  @@index([formulaId, sectionId])
+  @@index([studentId])
+}
+
+model FinalResultSubject {
+  id String @id @default(cuid())
+
+  resultId String
+  result   FinalResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  subjectId String
+  nameEn    String
+  nameBn    String
+  code      String?
+
+  isOptional Boolean
+  excluded   Boolean // in none of the components (e.g. absent everywhere under EXCLUDE)
+
+  percentage     Decimal  @db.Decimal(5, 2)
+  passPercentage Decimal  @db.Decimal(5, 2)
+  fullMarks      Decimal  @db.Decimal(6, 2)
+  marks          Decimal? @db.Decimal(6, 2)
+  passed         Boolean
+  grade          String?
+  point          Decimal? @db.Decimal(3, 2)
+
+  // each component's percentage and the exams behind it
+  components Json
+
+  sortOrder Int
+
+  @@index([resultId])
+}

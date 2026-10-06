@@ -6,9 +6,7 @@ import sendResponse from "../../shared/sendResponse";
 
 
 const createClass = catchAsync(async (req: Request, res: Response) => {
-     const schoolId = 'cmucy4ozy0000pcui71jscbs0'
-
-     const result = await ClassService.createClass(schoolId, req.body);
+    const result = await ClassService.createClass(req.auth!.schoolId!, req.body);
 
     sendResponse(res, {statusCode: httpStatus.CREATED, success: true, message: "Class created successfully!", data: result});
 });

@@ -1,40 +1,69 @@
-// validations/section.validation.ts
 import { z } from "zod";
+import { idSchema } from "../../shared/financeSchemas";
+import { timeSchema as time } from "../../shared/scheduleSchemas";
+
+// validateRequest({ body }) parses req.body directly, so these schemas are the bodies themselves
+
+const sectionName = z
+  .string({ error: "Section name is required!" })
+  .trim()
+  .min(1, "Section name is required!")
+  .max(50, "Section name cannot exceed 50 characters");
+
+const optionalId = z.string().trim().min(1).optional();
 
 const createSectionSchema = z.object({
-  body: z.object({
-    classId: z.string(),
-    name: z.string().min(1).max(50),
-  }),
+  classId: idSchema("Class"),
+  name: sectionName,
 });
 
-export const updateSectionSchema = z.object({
-  params: z.object({ sectionId: z.string() }),
-  body: z.object({
-    name: z.string().min(1).max(50),
-  }),
+// the class of a section never changes: enrollments store both, so only a rename is allowed
+const updateSectionSchema = z.strictObject({
+  name: sectionName,
 });
 
-export const listSectionsQuerySchema = z.object({
-  query: z.object({
-    classId: z.string().optional(),
-  }),
+const sectionIdParams = z.object({ sectionId: idSchema("Section id") });
+
+const listSectionsQuery = z.object({
+  classId: optionalId,
+  // teacher, capacity, class hours and student counts are for this year; defaults to the current year
+  academicYearId: optionalId,
 });
 
-export const setSectionYearConfigSchema = z.object({
-  params: z.object({ sectionId: z.string() }),
-  body: z.object({
-    academicYearId: z.string(),
-    classTeacherMembershipId: z.string().optional(),
-    capacity: z.number().int().positive().optional(),
-  }),
+const sectionQuery = z.object({
+  academicYearId: optionalId,
 });
 
-export const getSectionYearConfigQuerySchema = z.object({
-  params: z.object({ sectionId: z.string() }),
-  query: z.object({
-    academicYearId: z.string(),
-  }),
+const yearConfigQuery = z.object({
+  academicYearId: idSchema("Academic year"),
 });
 
-export const SectionValidation = {createSectionSchema}
+// missing = leave as it is, null = clear
+const setYearConfigSchema = z
+  .strictObject({
+    academicYearId: idSchema("Academic year"),
+    classTeacherMembershipId: z.string().trim().min(1).nullable().optional(),
+    // optional and only a warning: it never blocks an admission
+    capacity: z.number().int("Capacity must be a whole number").positive("Capacity must be greater than zero").max(500).nullable().optional(),
+    // the section's normal class hours; both are set together (checked after merging with what is saved)
+    startTime: time.nullable().optional(),
+    endTime: time.nullable().optional(),
+  })
+  .refine(
+    (d) =>
+      d.classTeacherMembershipId !== undefined ||
+      d.capacity !== undefined ||
+      d.startTime !== undefined ||
+      d.endTime !== undefined,
+    { message: "Provide a class teacher, a capacity or class hours" },
+  );
+
+export const SectionValidation = {
+  createSectionSchema,
+  updateSectionSchema,
+  sectionIdParams,
+  listSectionsQuery,
+  sectionQuery,
+  yearConfigQuery,
+  setYearConfigSchema,
+};

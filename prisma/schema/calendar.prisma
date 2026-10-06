@@ -1,0 +1,128 @@
+/*
+ * The school calendar: which days are school days.
+ *
+ * For a class on a date, the first match decides:
+ *   1. a school HOLIDAY entry covering that class
+ *   2. a WORKING_DAY entry covering that class (a make-up day on a weekly or national holiday)
+ *   3. a national holiday the school has not switched off
+ *   4. the weekly holiday rule in force that day
+ *   5. otherwise a school day
+ * For teachers the same, except a school holiday counts only when it covers all classes
+ * and has teachersOff = true (teachers can work on some holidays, e.g. exam duty).
+ */
+
+enum CalendarEntryKind {
+  HOLIDAY
+  WORKING_DAY // a day that would be off (weekly or national holiday) but has classes
+}
+
+enum HolidayType {
+  PUBLIC // a public holiday the school adds itself
+  SCHOOL // founding day, sports day off...
+  VACATION // summer, Ramadan, winter vacation
+}
+
+/*
+ * The weekly days off, from a date on. The latest rule that has started applies, so a
+ * change never rewrites what past days were. No rule = no weekly holiday.
+ */
+model WeeklyHolidayRule {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime @db.Date
+  // 0 = Sunday ... 5 = Friday, 6 = Saturday; empty = no weekly holiday
+  weekdays      Int[]
+
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([schoolId, effectiveFrom])
+}
+
+/* National public holidays, kept by the platform admin for every school. */
+model NationalHoliday {
+  id String @id @default(cuid())
+
+  nameEn      String
+  nameBn      String
+  description String?
+
+  fromDate DateTime @db.Date
+  toDate   DateTime @db.Date
+
+  exclusions NationalHolidayExclusion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromDate, toDate])
+}
+
+/* A school that stays open on a national holiday (it "removed" it from its calendar). */
+model NationalHolidayExclusion {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  nationalHolidayId String
+  nationalHoliday   NationalHoliday @relation(fields: [nationalHolidayId], references: [id], onDelete: Cascade)
+
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([schoolId, nationalHolidayId])
+}
+
+/*
+ * A school's own holiday, vacation or make-up working day; one day (fromDate = toDate) or
+ * several. It covers all classes, or only the classes listed.
+ */
+model CalendarEntry {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  kind CalendarEntryKind
+  type HolidayType? // set for holidays, null for working days
+
+  nameEn      String
+  nameBn      String
+  description String?
+
+  fromDate DateTime @db.Date
+  toDate   DateTime @db.Date
+
+  allClasses Boolean              @default(true)
+  classes    CalendarEntryClass[] // used when allClasses is false
+
+  // holidays only: false = teachers still work (exam duty, office work)
+  teachersOff Boolean @default(true)
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, fromDate, toDate])
+  @@index([academicYearId])
+}
+
+model CalendarEntryClass {
+  id String @id @default(cuid())
+
+  entryId String
+  entry   CalendarEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, classId])
+  @@index([classId])
+}

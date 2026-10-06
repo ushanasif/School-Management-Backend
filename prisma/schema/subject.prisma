@@ -1,0 +1,100 @@
+enum SubjectType {
+  COMPULSORY // every student of the class (or of the group) takes it
+  OPTIONAL // the student picks it (4th subject); the choice is recorded by the exam module
+}
+
+/*
+ * The subject catalogue. A platform subject (schoolId null) is the shared NCTB list every
+ * school can assign; a school subject (schoolId set) is that school's own extra.
+ *
+ * Papers: "Bangla 1st Paper" and "Bangla 2nd Paper" point to "Bangla" as their parent
+ * (one level only). A class gets either "Bangla" or its papers, never both, so results
+ * can combine the papers through the parent without counting anything twice.
+ *
+ * Names are unique (ignoring case) among the platform subjects and within a school, and a
+ * school subject cannot reuse a platform subject's name or code (checked by the service).
+ */
+model Subject {
+  id String @id @default(cuid())
+
+  schoolId String?
+  school   School? @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // both are required: a school can work in Bangla or in English
+  nameEn String
+  nameBn String
+  code   String? // NCTB code, e.g. "101"
+
+  // set for a religion subject ("Islam and Moral Education" = ISLAM): only students of that
+  // religion take it. A class has at most one subject per religion, for the whole class,
+  // and a religion subject is never a paper and never has papers.
+  religion Religion?
+
+  parentId String?
+  // Restrict: a subject that has papers cannot be deleted
+  parent   Subject?  @relation("SubjectPapers", fields: [parentId], references: [id], onDelete: Restrict)
+  papers   Subject[] @relation("SubjectPapers")
+
+  classSubjects ClassSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([parentId])
+}
+
+/*
+ * A subject taught in a class in one academic year. A new academic year starts with a
+ * copy of the previous year's list. groupId null = for the whole class; set = only for
+ * students of that group (Science, Business Studies...).
+ */
+model ClassSubject {
+  id String @id @default(cuid())
+
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  subjectId String
+  // Restrict: a subject in use cannot be deleted
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  groupId String?
+  // Restrict: deleting a group must not silently turn its subjects into whole-class subjects
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  type      SubjectType @default(COMPULSORY)
+  sortOrder Int         @default(0)
+
+  // marks setup: the default for every exam of the year (an exam copies it and may change it,
+  // e.g. a monthly test out of 25). null until the school sets it.
+  fullMarks Decimal?             @db.Decimal(6, 2)
+  passMarks Decimal?             @db.Decimal(6, 2)
+  // optional: Written 70 + MCQ 30..., each with its own pass marks; none = one total
+  parts     ClassSubjectPart[]
+
+  // this subject's own grading scale; null = the class's scale (ClassResultSetting)
+  gradingScaleId String?
+  gradingScale   GradingScale? @relation(fields: [gradingScaleId], references: [id], onDelete: Restrict)
+
+  teachers SubjectTeacher[]
+  examSubjects    ExamSubject[]
+  optionalChoices StudentOptionalSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // one row per subject per class and year (whole class or one group); the service also
+  // stops a subject being both whole-class and group-only in the same class and year
+  @@unique([academicYearId, classId, subjectId, groupId])
+  @@index([schoolId])
+  @@index([academicYearId, classId])
+  @@index([subjectId])
+  @@index([groupId])
+}

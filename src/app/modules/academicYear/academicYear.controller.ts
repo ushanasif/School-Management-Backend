@@ -6,11 +6,8 @@ import sendResponse from "../../shared/sendResponse";
 
 const createAcademicYear = catchAsync(
   async (req: Request, res: Response) => {
-    // const { schoolId } = req.auth!;
-    const schoolId = 'cmucy4ozy0000pcui71jscbs0'
-    
     const result = await AcademicYearService.createAcademicYear(
-      schoolId!,
+      req.auth!.schoolId!,
       req.body
     );
 
